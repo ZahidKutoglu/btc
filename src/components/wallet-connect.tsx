@@ -77,7 +77,7 @@ export function WalletConnect({
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent >
           <DialogHeader>
             <DialogTitle>Connect your wallet</DialogTitle>
             <DialogDescription>
@@ -90,7 +90,7 @@ export function WalletConnect({
               <Bitcoin className="h-10 w-10 text-white animate-pulse-slow" />
             </div>
             
-            <div className="border border-border bg-secondary/30 rounded-lg p-4 w-full mb-4">
+            <div className="border border-border bg-secondary/30 rounded-lg p-4 w-full mb-4 max-w-full">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium">Mock Bitcoin Wallet</p>
                 <div className="p-1.5 rounded-md bg-green-500/20 text-green-600">
@@ -102,13 +102,13 @@ export function WalletConnect({
                 <div className="bg-black p-2 rounded">
                   <QrCode className="h-5 w-5 text-white" />
                 </div>
-                <div className="flex-1 truncate text-sm px-2 py-1 rounded bg-muted">
+                <div className=" truncate text-sm px-2 py-1 rounded bg-muted">
                   {mockAddress}
                 </div>
                 <Button 
                   variant="ghost" 
                   size="icon" 
-                  className="h-8 w-8"
+                  className="h-8 w-8 flex-shrink"
                   onClick={copyToClipboard}
                 >
                   {copied ? (
