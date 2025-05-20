@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Header } from "@/components/header";
@@ -7,12 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { WalletConnect } from "@/components/wallet-connect";
-import { useUser } from "@/hooks/use-user";
 import { toast } from "sonner";
 import { InfoIcon } from "lucide-react";
+import { auth, db } from "@/lib/firebase"; // Make sure you have firebase configured
+import { createUserWithEmailAndPassword } from "firebase/auth";
+import { doc, setDoc } from "firebase/firestore";
 
 export default function Signup() {
-  const { signup } = useUser();
   const navigate = useNavigate();
   
   const [walletConnected, setWalletConnected] = useState(false);
@@ -22,12 +22,19 @@ export default function Signup() {
     username: "",
     email: "",
     twitter: "",
+    password: ""
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleWalletConnect = (address: string) => {
-    setWalletAddress(address);
-    setWalletConnected(true);
+  const handleWalletConnect = (userData: any) => {
+    const address = userData?.profile?.stxAddress?.mainnet;
+    if (address) {
+      setWalletAddress(address);
+      setWalletConnected(true);
+      toast.success("Wallet connected successfully");
+    } else {
+      toast.error("Failed to get wallet address");
+    }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -35,7 +42,7 @@ export default function Signup() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!walletConnected) {
@@ -43,19 +50,23 @@ export default function Signup() {
       return;
     }
     
-    if (!formData.name || !formData.username) {
-      toast.error("Name and username are required");
+    // Form validation
+    if (!formData.name || !formData.username || !formData.email || !formData.password) {
+      toast.error("All fields are required");
       return;
     }
 
-    // Validate username format
+    if (formData.password.length < 6) {
+      toast.error("Password should be at least 6 characters");
+      return;
+    }
+
     if (!/^[a-zA-Z0-9_]+$/.test(formData.username)) {
       toast.error("Username can only contain letters, numbers and underscores");
       return;
     }
 
-    // Validate email if provided
-    if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
       toast.error("Please enter a valid email address");
       return;
     }
@@ -63,14 +74,64 @@ export default function Signup() {
     setIsSubmitting(true);
     
     try {
-      signup({
-        ...formData,
-        walletAddress,
+      // 1. Create Firebase auth user
+      const userCredential = await createUserWithEmailAndPassword(
+        auth,
+        formData.email,
+        formData.password
+      );
+
+      const user = userCredential.user;
+
+      // 2. Save user data to Firestore
+      await setDoc(doc(db, "users", user.uid), {
+        uid: user.uid,
+        name: formData.name,
+        username: formData.username.toLowerCase(),
+        email: formData.email,
+        twitter: formData.twitter.startsWith('@') 
+          ? formData.twitter 
+          : `@${formData.twitter}`,
+        walletAddress: walletAddress,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       });
-      
+
+      // 3. Optional: Create a public profile document
+      await setDoc(doc(db, "publicProfiles", formData.username.toLowerCase()), {
+        uid: user.uid,
+        name: formData.name,
+        username: formData.username.toLowerCase(),
+        twitter: formData.twitter.startsWith('@') 
+          ? formData.twitter 
+          : `@${formData.twitter}`,
+        walletAddress: walletAddress,
+        createdAt: new Date().toISOString()
+      });
+
+      toast.success("Account created successfully!");
       navigate("/dashboard");
     } catch (error: any) {
-      toast.error(error.message || "Failed to create account");
+      console.error("Signup error:", error);
+      let errorMessage = "Failed to create account";
+      
+      switch (error.code) {
+        case "auth/email-already-in-use":
+          errorMessage = "Email already in use";
+          break;
+        case "auth/weak-password":
+          errorMessage = "Password should be at least 6 characters";
+          break;
+        case "auth/invalid-email":
+          errorMessage = "Invalid email address";
+          break;
+        case "firestore/permission-denied":
+          errorMessage = "Database error. Please try again.";
+          break;
+      }
+      
+      toast.error(errorMessage);
+    } finally {
       setIsSubmitting(false);
     }
   };
@@ -107,11 +168,11 @@ export default function Signup() {
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div className="bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400 p-3 rounded-md text-sm flex items-center">
                     <InfoIcon className="h-5 w-5 mr-2" />
-                    <span>Wallet connected successfully!</span>
+                    <span>Wallet connected: {walletAddress.substring(0, 6)}...{walletAddress.substring(walletAddress.length - 4)}</span>
                   </div>
                   
                   <div className="space-y-2">
-                    <Label htmlFor="name">Full Name</Label>
+                    <Label htmlFor="name">Full Name *</Label>
                     <Input 
                       id="name" 
                       name="name"
@@ -123,7 +184,7 @@ export default function Signup() {
                   </div>
                   
                   <div className="space-y-2">
-                    <Label htmlFor="username">Username</Label>
+                    <Label htmlFor="username">Username *</Label>
                     <Input 
                       id="username" 
                       name="username"
@@ -133,12 +194,12 @@ export default function Signup() {
                       required
                     />
                     <p className="text-xs text-muted-foreground">
-                      This will be your BitID username
+                      Letters, numbers and underscores only. This will be your public BitID.
                     </p>
                   </div>
                   
                   <div className="space-y-2">
-                    <Label htmlFor="email">Email (optional)</Label>
+                    <Label htmlFor="email">Email *</Label>
                     <Input 
                       id="email" 
                       name="email"
@@ -146,7 +207,25 @@ export default function Signup() {
                       placeholder="john@example.com" 
                       value={formData.email}
                       onChange={handleInputChange}
+                      required
                     />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="password">Password *</Label>
+                    <Input 
+                      id="password" 
+                      name="password"
+                      type="password" 
+                      placeholder="••••••" 
+                      value={formData.password}
+                      onChange={handleInputChange}
+                      required
+                      minLength={6}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      At least 6 characters
+                    </p>
                   </div>
                   
                   <div className="space-y-2">
@@ -165,7 +244,12 @@ export default function Signup() {
                     className="w-full"
                     disabled={isSubmitting}
                   >
-                    {isSubmitting ? "Creating..." : "Create BitID"}
+                    {isSubmitting ? (
+                      <>
+                        <span className="mr-2">Creating...</span>
+                        <span className="animate-spin">↻</span>
+                      </>
+                    ) : "Create BitID"}
                   </Button>
                 </form>
               )}

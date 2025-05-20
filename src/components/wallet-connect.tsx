@@ -1,5 +1,13 @@
+'use client';
 
-import { useState } from "react";
+declare global {
+  interface Window {
+    StacksProvider?: any;
+  }
+}
+
+
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { 
   Dialog,
@@ -14,12 +22,16 @@ import {
   Copy, 
   Check,
   Wallet,
-  AlertCircle
+  AlertCircle,
+  ExternalLink
 } from "lucide-react";
 import { toast } from "sonner";
+import { showConnect } from '@stacks/connect';
+import { userSession } from '@/lib/stacks'
 
 interface WalletConnectProps {
-  onConnect: (walletAddress: string) => void;
+  onConnect: (userData: any) => void;
+  onDisconnect?: () => void;
   buttonText?: string;
   variant?: "default" | "outline" | "destructive" | "secondary" | "ghost" | "link";
   className?: string;
@@ -27,42 +39,98 @@ interface WalletConnectProps {
 
 export function WalletConnect({ 
   onConnect, 
+  onDisconnect,
   buttonText = "Connect Wallet", 
   variant = "default",
   className = ""
 }: WalletConnectProps) {
   const [open, setOpen] = useState(false);
   const [connecting, setConnecting] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false); // New state for disconnecting
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [userData, setUserData] = useState<any>(null);
+  const [isLeatherInstalled, setIsLeatherInstalled] = useState(false);
 
-  // Mock wallet address
-  const mockAddress = "bc1q9h805z6vkn87zx584ngnj88tn4vsp7hdzwqf45";
+  useEffect(() => {
+    const checkLeatherInstalled = () => {
+      const isInstalled = !!window.StacksProvider;
+      setIsLeatherInstalled(isInstalled);
+      return isInstalled;
+    };
+
+    checkLeatherInstalled();
+
+    if (userSession.isUserSignedIn()) {
+      const data = userSession.loadUserData();
+      setUserData(data);
+      onConnect(data);
+    } else if (userSession.isSignInPending()) {
+      setConnecting(true);
+      userSession.handlePendingSignIn().then((data) => {
+        setUserData(data);
+        onConnect(data);
+        setConnecting(false);
+      });
+    }
+  }, [onConnect]);
 
   const handleConnect = () => {
     setConnecting(true);
     setError(null);
     
-    // Simulate connection delay
-    setTimeout(() => {
-      setConnecting(false);
-      
-      // Small chance of connection error for realism
-      if (Math.random() > 0.9) {
-        setError("Connection failed. Please try again.");
-        return;
-      }
-      
-      onConnect(mockAddress);
-      setOpen(false);
-      toast.success("Wallet connected successfully");
-    }, 1500);
+    showConnect({
+      appDetails: {
+        name: 'Bitcoin Passport',
+        icon: window.location.origin + '/icon.png',
+      },
+      redirectTo: '/',
+      onFinish: () => {
+        const data = userSession.loadUserData();
+        setUserData(data);
+        onConnect(data);
+        setConnecting(false);
+        setOpen(false);
+        toast.success("Wallet connected successfully");
+      },
+      onCancel: () => {
+        setConnecting(false);
+        setError("Connection cancelled by user");
+      },
+      userSession,
+    });
+  };
+
+  const handleDisconnect = async () => {
+    try {
+      setDisconnecting(true); // Set disconnecting state
+      await userSession.signUserOut();
+      setUserData(null);
+      setOpen(false); // Close the dialog
+      if (onDisconnect) onDisconnect();
+      toast.info("Wallet disconnected");
+    } catch (err) {
+      console.error("Disconnect error:", err);
+      toast.error("Failed to disconnect wallet");
+    } finally {
+      setDisconnecting(false); // Reset disconnecting state
+    }
   };
 
   const copyToClipboard = () => {
-    navigator.clipboard.writeText(mockAddress);
+    if (!userData?.profile?.stxAddress?.mainnet) return;
+    navigator.clipboard.writeText(userData.profile.stxAddress.mainnet);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const shortenAddress = (address: string) => {
+    if (!address) return '';
+    return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+  };
+
+  const installLeather = () => {
+    window.open('https://leather.io/install-extension', '_blank');
   };
 
   return (
@@ -70,75 +138,132 @@ export function WalletConnect({
       <Button 
         variant={variant} 
         className={`${className}`}
-        onClick={() => setOpen(true)}
+        onClick={() => userData ? handleDisconnect() : setOpen(true)}
+        disabled={connecting || disconnecting} // Disable during both connect/disconnect
       >
         <Wallet className="mr-2 h-4 w-4" />
-        {buttonText}
+        {userData ? 
+          (disconnecting ? "Disconnecting..." : "Disconnect Wallet") : 
+          (connecting ? "Connecting..." : buttonText)}
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent >
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Connect your wallet</DialogTitle>
+            <DialogTitle>{userData ? "Wallet Connected" : "Connect your wallet"}</DialogTitle>
             <DialogDescription>
-              Connect your Bitcoin wallet to create or access your decentralized identity.
+              {userData ? (
+                "Your wallet is successfully connected."
+              ) : (
+                "Connect your Bitcoin wallet to create or access your decentralized identity."
+              )}
             </DialogDescription>
           </DialogHeader>
           
-          <div className="flex flex-col items-center py-6">
-            <div className="bg-gradient-primary p-4 rounded-xl mb-4">
-              <Bitcoin className="h-10 w-10 text-white animate-pulse-slow" />
-            </div>
-            
-            <div className="border border-border bg-secondary/30 rounded-lg p-4 w-full mb-4 max-w-full">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium">Mock Bitcoin Wallet</p>
-                <div className="p-1.5 rounded-md bg-green-500/20 text-green-600">
-                  <div className="h-2 w-2 rounded-full bg-green-600" />
+          <div className="flex flex-col items-center py-0.5">
+            {userData ? (
+              <div className="border border-border bg-secondary/30 rounded-lg p-4 w-full mb-4 max-w-full">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium">Leather Wallet</p>
+                  <div className="p-1.5 rounded-md bg-green-500/20 text-green-600">
+                    <div className="h-2 w-2 rounded-full bg-green-600" />
+                  </div>
                 </div>
-              </div>
-              
-              <div className="mt-4 flex items-center gap-2">
-                <div className="bg-black p-2 rounded">
-                  <QrCode className="h-5 w-5 text-white" />
+                
+                <div className="mt-4 flex items-center gap-2">
+                  <div className="bg-black p-2 rounded">
+                    <QrCode className="h-5 w-5 text-white" />
+                  </div>
+                  <div className="flex-1 truncate text-sm px-2 py-1 rounded bg-muted max-w-[200px]">
+                    {shortenAddress(userData.profile.stxAddress?.mainnet)}
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-8 w-8 flex-shrink-0"
+                    onClick={copyToClipboard}
+                  >
+                    {copied ? (
+                      <Check className="h-4 w-4 text-green-600" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                  </Button>
                 </div>
-                <div className=" truncate text-sm px-2 py-1 rounded bg-muted">
-                  {mockAddress}
-                </div>
+                
                 <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="h-8 w-8 flex-shrink"
-                  onClick={copyToClipboard}
+                  variant="outline" 
+                  className="w-full mt-4"
+                  onClick={handleDisconnect}
+                  disabled={disconnecting}
                 >
-                  {copied ? (
-                    <Check className="h-4 w-4 text-green-600" />
-                  ) : (
-                    <Copy className="h-4 w-4" />
-                  )}
+                  {disconnecting ? (
+                    <>
+                      <div className="mr-2 h-4 w-4 animate-spin border-2 border-current border-t-transparent rounded-full" />
+                      Disconnecting...
+                    </>
+                  ) : "Disconnect Wallet"}
                 </Button>
               </div>
-            </div>
-            
-            {error && (
-              <div className="bg-destructive/10 text-destructive flex items-center gap-2 p-3 rounded-lg w-full mb-4">
-                <AlertCircle className="h-5 w-5" />
-                <p className="text-sm">{error}</p>
-              </div>
+            ) : (
+              <>
+                <div className="bg-gradient-primary p-4 rounded-xl mb-4">
+                  <Bitcoin className="h-10 w-10 text-white animate-pulse-slow" />
+                </div>
+                
+                {!isLeatherInstalled ? (
+                  <div className="w-full space-y-4">
+                    <div className="bg-yellow-500/10 text-yellow-600 flex items-center gap-2 p-3 rounded-lg">
+                      <AlertCircle className="h-5 w-5" />
+                      <p className="text-sm">Leather wallet extension not detected</p>
+                    </div>
+                    
+                    <Button 
+                      className="w-full" 
+                      onClick={installLeather}
+                    >
+                      Install Leather Wallet
+                      <ExternalLink className="ml-2 h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="border border-border bg-secondary/30 rounded-lg p-4 w-full mb-4 max-w-full">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium">Leather Wallet</p>
+                        <div className="p-1.5 rounded-md bg-gray-500/20 text-gray-600">
+                          <div className="h-2 w-2 rounded-full bg-gray-600" />
+                        </div>
+                      </div>
+                      
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        Click connect to authenticate with your Leather wallet
+                      </p>
+                    </div>
+                    
+                    {error && (
+                      <div className="bg-destructive/10 text-destructive flex items-center gap-2 p-3 rounded-lg w-full mb-4">
+                        <AlertCircle className="h-5 w-5" />
+                        <p className="text-sm">{error}</p>
+                      </div>
+                    )}
+                    
+                    <Button 
+                      className="w-full" 
+                      onClick={handleConnect}
+                      disabled={connecting}
+                    >
+                      {connecting ? (
+                        <>
+                          <div className="mr-2 h-4 w-4 animate-spin border-2 border-current border-t-transparent rounded-full" />
+                          Connecting...
+                        </>
+                      ) : "Connect Wallet"}
+                    </Button>
+                  </>
+                )}
+              </>
             )}
-            
-            <Button 
-              className="w-full" 
-              onClick={handleConnect}
-              disabled={connecting}
-            >
-              {connecting ? (
-                <>
-                  <div className="mr-2 h-4 w-4 animate-spin border-2 border-current border-t-transparent rounded-full" />
-                  Connecting...
-                </>
-              ) : "Connect Wallet"}
-            </Button>
           </div>
         </DialogContent>
       </Dialog>

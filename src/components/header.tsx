@@ -43,6 +43,13 @@ export function Header() {
           >
             Verify Identity
           </Link>
+
+          <Link
+            to="/IssueCredential"
+            className="text-sm font-medium transition-colors hover:text-primary"
+          >
+            Issue Credential
+          </Link>
           {!user && (
             <>
               <Link

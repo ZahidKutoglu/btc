@@ -49,6 +49,7 @@ export default function Login() {
                 <p className="text-sm text-muted-foreground mb-2">Connect your Bitcoin wallet to continue</p>
                 <WalletConnect 
                   onConnect={handleWalletConnect} 
+                  onDisconnect={() => setIsLoading(false)}
                   buttonText={isLoading ? "Connecting..." : "Connect Wallet"} 
                   className="w-full"
                 />

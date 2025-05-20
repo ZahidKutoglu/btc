@@ -16,6 +16,7 @@ import Issue from "./pages/Issue";
 import Verifier from "./pages/Verifier";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
+import IssueCredential from "./pages/IssueCredintial";
 
 const queryClient = new QueryClient();
 
@@ -34,6 +35,7 @@ const App = () => (
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/issue" element={<Issue />} />
               <Route path="/verifier" element={<Verifier />} />
+              <Route path="IssueCredential" element={<IssueCredential />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="*" element={<NotFound />} />
             </Routes>

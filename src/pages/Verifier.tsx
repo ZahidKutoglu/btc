@@ -1,38 +1,111 @@
-
-import { useState } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { Header } from "@/components/header";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { User } from "@/lib/mock-data";
-import { useUser } from "@/hooks/use-user";
 import { Search, UserCheck, QrCode, Shield, AlertCircle } from "lucide-react";
 import { CredentialCard } from "@/components/credential-card";
+import { collection, query, where, getDocs, doc, getDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { Scanner } from '@yudiel/react-qr-scanner';
 
 export default function Verifier() {
-  const { findUser } = useUser();
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState<string>("");
   const [searching, setSearching] = useState(false);
-  const [foundUser, setFoundUser] = useState<User | null>(null);
+  const [foundUser, setFoundUser] = useState<any>(null);
   const [searched, setSearched] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [cameraFacingMode, setCameraFacingMode] = useState<'user' | 'environment'>('environment');
+  const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
+  const scannerRef = useRef(null);
 
-  const handleSearch = (e: React.FormEvent) => {
+  // Check camera permissions when component mounts
+  useEffect(() => {
+    const checkCameraPermission = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        stream.getTracks().forEach(track => track.stop());
+        setHasCameraPermission(true);
+      } catch (err) {
+        setHasCameraPermission(false);
+        setError("Camera access denied. Please enable camera permissions.");
+      }
+    };
+
+    if (scanning) {
+      checkCameraPermission();
+    }
+  }, [scanning]);
+
+  const handleSearch = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (!searchQuery.trim()) return;
-    
+
     setSearching(true);
     setSearched(true);
-    
-    // Simulate network latency
-    setTimeout(() => {
-      const user = findUser(searchQuery.trim());
-      setFoundUser(user);
+    setError(null);
+
+    try {
+      const searchTerm = searchQuery.trim().toLowerCase();
+      let userDoc = null;
+
+      if (searchTerm.startsWith("@")) {
+        const username = searchTerm.slice(1);
+        const q = query(
+          collection(db, "users"),
+          where("username", "==", username)
+        );
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
+          const docSnap = querySnapshot.docs[0];
+          userDoc = { id: docSnap.id, ...docSnap.data() };
+        }
+      } else {
+        const docRef = doc(db, "users", searchTerm);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          userDoc = { id: docSnap.id, ...docSnap.data() };
+        }
+      }
+
+      setFoundUser(userDoc);
+    } catch (err: any) {
+      console.error(err);
+      setError("An error occurred while searching. Please try again.");
+    } finally {
       setSearching(false);
-    }, 1000);
-  };
+    }
+  }, [searchQuery]);
+
+  const handleScan = useCallback((result: string) => {
+    if (!result) return;
+    
+    setScanning(false);
+    setSearchQuery(result);
+    // The actual search will be triggered by the searchQuery change effect
+  }, []);
+
+  const handleError = useCallback((err: Error) => {
+    console.error(err);
+    setError(`Camera error: ${err.message}`);
+    setScanning(false);
+  }, []);
+
+  const toggleCamera = useCallback(() => {
+    setCameraFacingMode(prev => prev === 'environment' ? 'user' : 'environment');
+  }, []);
+
+  // Trigger search when QR code is scanned
+  useEffect(() => {
+    if (searchQuery && searched) {
+      const searchEvent = new Event('submit', { cancelable: true });
+      const form = document.querySelector('form');
+      form?.dispatchEvent(searchEvent);
+    }
+  }, [searchQuery, searched]);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -45,7 +118,7 @@ export default function Verifier() {
               Verify the credentials of any BitID user without compromising their privacy or security.
             </p>
           </div>
-          
+
           <Card className="border-2">
             <CardContent className="pt-6">
               <Tabs defaultValue="search">
@@ -53,13 +126,13 @@ export default function Verifier() {
                   <TabsTrigger value="search">Search</TabsTrigger>
                   <TabsTrigger value="scan">Scan QR Code</TabsTrigger>
                 </TabsList>
-                
+
                 <TabsContent value="search">
                   <form onSubmit={handleSearch} className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="search">Search by Username or Wallet Address</Label>
+                      <Label htmlFor="search">Search by @username or Wallet Address</Label>
                       <div className="flex gap-2">
-                        <Input 
+                        <Input
                           id="search"
                           placeholder="Enter @username or wallet address"
                           value={searchQuery}
@@ -74,26 +147,78 @@ export default function Verifier() {
                         </Button>
                       </div>
                     </div>
-                    
+                    {error && <p className="text-sm text-red-600">{error}</p>}
                     <div className="flex items-center justify-center text-xs text-muted-foreground">
-                      Try searching for "alexbtc" or "emmabtc"
+                      Try searching for "@alexbtc" or entering a wallet address
                     </div>
                   </form>
                 </TabsContent>
-                
+
                 <TabsContent value="scan" className="flex flex-col items-center justify-center space-y-4 py-8">
-                  <div className="p-3 border-2 border-dashed rounded-lg">
-                    <div className="w-48 h-48 bg-muted flex items-center justify-center">
-                      <QrCode className="h-16 w-16 text-muted-foreground" />
-                    </div>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Position a QR code in front of your camera to scan
-                  </p>
-                  <Button>Scan QR Code</Button>
+                  {scanning ? (
+                    <>
+                      {hasCameraPermission === false ? (
+                        <div className="text-center p-6 bg-red-100 dark:bg-red-900/30 rounded-lg">
+                          <AlertCircle className="h-8 w-8 text-red-600 mx-auto mb-2" />
+                          <p className="text-red-600">Camera access denied. Please enable camera permissions in your browser settings.</p>
+                          <Button className="mt-4" onClick={() => setScanning(false)}>
+                            Back
+                          </Button>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="w-full max-w-md aspect-square relative">
+                            <Scanner
+                              ref={scannerRef}
+                              onResult={(result) => result?.getText() && handleScan(result.getText())}
+                              onError={handleError}
+                              constraints={{
+                                facingMode: cameraFacingMode,
+                                video: { width: { ideal: 1280 }, height: { ideal: 720 } }
+                              }}
+                              containerStyle={{
+                                width: '100%',
+                                height: '100%',
+                                borderRadius: '0.5rem',
+                                overflow: 'hidden',
+                              }}
+                              videoStyle={{
+                                width: '100%',
+                                height: '100%',
+                                objectFit: 'cover',
+                              }}
+                            />
+                            <div className="absolute inset-0 border-4 border-green-500 rounded-lg pointer-events-none" />
+                          </div>
+                          <div className="flex gap-2">
+                            <Button variant="outline" onClick={toggleCamera}>
+                              Switch Camera
+                            </Button>
+                            <Button variant="destructive" onClick={() => setScanning(false)}>
+                              Cancel Scan
+                            </Button>
+                          </div>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <div className="p-3 border-2 border-dashed rounded-lg">
+                        <div className="w-48 h-48 bg-muted flex items-center justify-center">
+                          <QrCode className="h-16 w-16 text-muted-foreground" />
+                        </div>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Position a QR code in front of your camera to scan
+                      </p>
+                      <Button onClick={() => setScanning(true)}>
+                        Start Scanning
+                      </Button>
+                    </>
+                  )}
                 </TabsContent>
               </Tabs>
-              
+
               {searched && (
                 <div className="border-t mt-6 pt-6">
                   {foundUser ? (
@@ -107,17 +232,17 @@ export default function Verifier() {
                           <p className="text-muted-foreground">@{foundUser.username}</p>
                         </div>
                       </div>
-                      
+
                       <div className="bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400 p-3 rounded-lg flex items-center gap-2 text-sm">
                         <Shield className="h-5 w-5" />
                         <span>This BitID has been successfully verified</span>
                       </div>
-                      
+
                       <div>
                         <h3 className="text-lg font-semibold mb-3">Verified Credentials</h3>
                         <div className="space-y-3">
-                          {foundUser.credentials.length > 0 ? (
-                            foundUser.credentials.map((credential) => (
+                          {foundUser.credentials?.length > 0 ? (
+                            foundUser.credentials.map((credential: any) => (
                               <CredentialCard key={credential.id} credential={credential} compact />
                             ))
                           ) : (
@@ -142,6 +267,7 @@ export default function Verifier() {
                         onClick={() => {
                           setSearchQuery("");
                           setSearched(false);
+                          setFoundUser(null);
                         }}
                       >
                         Try Another Search
@@ -152,11 +278,11 @@ export default function Verifier() {
               )}
             </CardContent>
           </Card>
-          
+
           <div className="mt-8 p-4 border rounded-lg bg-muted/30">
             <h3 className="text-lg font-semibold mb-2">About Verification</h3>
             <p className="text-sm text-muted-foreground">
-              BitID verifications are performed trustlessly through cryptographic proofs on the Bitcoin blockchain. 
+              BitID verifications are performed trustlessly through cryptographic proofs on the Bitcoin blockchain.
               Each credential has been cryptographically signed by the issuer and can be verified without revealing sensitive information.
             </p>
           </div>
