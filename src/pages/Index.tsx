@@ -51,6 +51,13 @@ export default function Index() {
                 <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight">
                   Your <span className="text-gradient">Decentralized Identity</span> on Bitcoin
                 </h1>
+
+               
+                 
+                    <img src="/allLogos.png" alt="Logo 1" width={400} />
+                 
+                
+
                 <p className="text-lg text-muted-foreground">
                   BitID gives you control over your digital identity. Create verifiable credentials, protect your privacy, and securely verify identities without centralized authorities.
                 </p>
