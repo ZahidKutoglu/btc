@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { CheckIcon, MailIcon, FileTextIcon, HomeIcon, GraduationCapIcon, Loader2 } from "lucide-react";
-import { Header } from "@/components/header";
+
 
 type CredentialStatus = 'unverified' | 'pending' | 'verified';
 
@@ -114,7 +114,7 @@ export default function IssueCredential() {
       case 'email':
         return (
           <div className="space-y-4">
-            <Header />
+            
             <div className="space-y-2">
               <Label htmlFor="email">Email Address</Label>
               <Input
@@ -149,7 +149,7 @@ export default function IssueCredential() {
       case 'governmentId':
         return (
           <div className="space-y-4">
-            <Header />
+            
             <div className="space-y-2">
               <Label htmlFor="idName">Full Name (as on ID)</Label>
               <Input
@@ -208,7 +208,7 @@ export default function IssueCredential() {
       case 'address':
         return (
           <div className="space-y-4">
-            <Header />
+            
             <div className="space-y-2">
               <Label htmlFor="address">Residential Address</Label>
               <Input
@@ -256,7 +256,7 @@ export default function IssueCredential() {
       case 'degree':
         return (
           <div className="space-y-4">
-            <Header />
+            
             <div className="space-y-2">
               <Label htmlFor="university">University Name</Label>
               <Input
@@ -322,7 +322,7 @@ export default function IssueCredential() {
 
   return (
     <div className="min-h-screen flex flex-col">
-        <Header />
+        
       <main className="flex-1 flex items-center justify-center py-12 px-4">
         <div className="w-full max-w-md animate-fade-in">
           <Card className="border-2">
